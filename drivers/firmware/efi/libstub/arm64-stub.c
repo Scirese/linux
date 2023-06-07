@@ -97,7 +97,7 @@ efi_status_t handle_kernel_image(unsigned long *image_addr,
 	kernel_size = _edata - _text;
 	kernel_codesize = __inittext_end - _text;
 	kernel_memsize = kernel_size + (_end - _edata);
-	*reserve_size = kernel_memsize;
+	*reserve_size = kernel_memsize + TEXT_OFFSET % min_kimg_align;
 
 	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE) && phys_seed != 0) {
 		/*
@@ -116,7 +116,7 @@ efi_status_t handle_kernel_image(unsigned long *image_addr,
 	if (status != EFI_SUCCESS) {
 		if (!check_image_region((u64)_text, kernel_memsize)) {
 			efi_err("FIRMWARE BUG: Image BSS overlaps adjacent EFI memory region\n");
-		} else if (IS_ALIGNED((u64)_text, min_kimg_align) &&
+		} else if (IS_ALIGNED((u64)_text - TEXT_OFFSET, min_kimg_align) &&
 			   (u64)_end < EFI_ALLOC_LIMIT) {
 			/*
 			 * Just execute from wherever we were loaded by the
@@ -138,7 +138,7 @@ efi_status_t handle_kernel_image(unsigned long *image_addr,
 		}
 	}
 
-	*image_addr = *reserve_addr;
+	*image_addr = *reserve_addr + TEXT_OFFSET % min_kimg_align;;
 	memcpy((void *)*image_addr, _text, kernel_size);
 	caches_clean_inval_pou(*image_addr, *image_addr + kernel_codesize);
 	efi_remap_image(*image_addr, *reserve_size, kernel_codesize);
