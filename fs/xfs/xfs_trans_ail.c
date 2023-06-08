@@ -137,7 +137,7 @@ xfs_ail_min_lsn(
 /*
  * Return the maximum lsn held in the AIL, or zero if the AIL is empty.
  */
-static xfs_lsn_t
+xfs_lsn_t
 xfs_ail_max_lsn(
 	struct xfs_ail		*ailp)
 {

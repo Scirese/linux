@@ -496,9 +496,9 @@ xrep_fix_freelist(
 	args.agno = sc->sa.pag->pag_agno;
 	args.alignment = 1;
 	args.pag = sc->sa.pag;
+	args.flags = can_shrink ? 0 : XFS_ALLOC_FLAG_NOSHRINK;
 
-	return xfs_alloc_fix_freelist(&args,
-			can_shrink ? 0 : XFS_ALLOC_FLAG_NOSHRINK);
+	return xfs_alloc_fix_freelist(&args, args.flags);
 }
 
 /*

@@ -2540,29 +2540,26 @@ xlog_recover_process_intents(
 	struct xfs_log_item	*lip;
 	struct xfs_ail		*ailp;
 	int			error = 0;
-#if defined(DEBUG) || defined(XFS_WARN)
-	xfs_lsn_t		last_lsn;
-#endif
+	xfs_lsn_t		threshold_lsn;
 
 	ailp = log->l_ailp;
+	threshold_lsn = xfs_ail_max_lsn(ailp);
 	spin_lock(&ailp->ail_lock);
-#if defined(DEBUG) || defined(XFS_WARN)
-	last_lsn = xlog_assign_lsn(log->l_curr_cycle, log->l_curr_block);
-#endif
+
 	for (lip = xfs_trans_ail_cursor_first(ailp, &cur, 0);
 	     lip != NULL;
 	     lip = xfs_trans_ail_cursor_next(ailp, &cur)) {
 		const struct xfs_item_ops	*ops;
+		/*
+		 * Orignal redo EFI could be splitted into new EFIs. Those
+		 * new EFIs are supposed to be processed in capture_list.
+		 * Stop here when original redo intents are done.
+		 */
+		if (XFS_LSN_CMP(threshold_lsn, lip->li_lsn) < 0)
+			break;
 
 		if (!xlog_item_is_intent(lip))
 			break;
-
-		/*
-		 * We should never see a redo item with a LSN higher than
-		 * the last transaction we found in the log at the start
-		 * of recovery.
-		 */
-		ASSERT(XFS_LSN_CMP(last_lsn, lip->li_lsn) >= 0);
 
 		/*
 		 * NOTE: If your intent processing routine can create more

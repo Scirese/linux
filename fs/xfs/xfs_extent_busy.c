@@ -567,18 +567,41 @@ xfs_extent_busy_clear(
 /*
  * Flush out all busy extents for this AG.
  */
-void
+int
 xfs_extent_busy_flush(
-	struct xfs_mount	*mp,
+	struct xfs_trans	*tp,
 	struct xfs_perag	*pag,
-	unsigned		busy_gen)
+	unsigned		busy_gen,
+	int			flags)
 {
 	DEFINE_WAIT		(wait);
 	int			error;
 
-	error = xfs_log_force(mp, XFS_LOG_SYNC);
+	error = xfs_log_force(tp->t_mountp, XFS_LOG_SYNC);
 	if (error)
-		return;
+		return error;
+
+	/*
+	 * If we are holding busy extents, the caller may not want to block
+	 * straight away. If we are being told just to try a flush or progress
+	 * has been made since we last skipped a busy extent, return
+	 * immediately to allow the caller to try again. If we are freeing
+	 * extents, we might actually be holding the only free extents in the
+	 * transaction busy list and the log force won't resolve that
+	 * situation. In this case, return -EAGAIN in that case to tell the
+	 * caller it needs to commit the busy extents it holds before retrying
+	 * the extent free operation.
+	 */
+	if (!list_empty(&tp->t_busy)) {
+		if (flags & XFS_ALLOC_FLAG_TRYFLUSH)
+			return 0;
+
+		if (busy_gen != READ_ONCE(pag->pagb_gen))
+			return 0;
+
+		if (flags & XFS_ALLOC_FLAG_FREEING)
+			return -EAGAIN;
+	}
 
 	do {
 		prepare_to_wait(&pag->pagb_wait, &wait, TASK_KILLABLE);
@@ -588,6 +611,7 @@ xfs_extent_busy_flush(
 	} while (1);
 
 	finish_wait(&pag->pagb_wait, &wait);
+	return 0;
 }
 
 void

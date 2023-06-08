@@ -1491,6 +1491,7 @@ STATIC int
 xfs_alloc_ag_vextent_near(
 	struct xfs_alloc_arg	*args)
 {
+	int			flags = args->flags | XFS_ALLOC_FLAG_TRYFLUSH;
 	struct xfs_alloc_cur	acur = {};
 	int			error;		/* error code */
 	int			i;		/* result code, temporary */
@@ -1564,8 +1565,11 @@ restart:
 	if (!acur.len) {
 		if (acur.busy) {
 			trace_xfs_alloc_near_busy(args);
-			xfs_extent_busy_flush(args->mp, args->pag,
-					      acur.busy_gen);
+			error = xfs_extent_busy_flush(args->tp, args->pag,
+					      acur.busy_gen, flags);
+			if (error)
+				goto out;
+			flags &= ~XFS_ALLOC_FLAG_TRYFLUSH;
 			goto restart;
 		}
 		trace_xfs_alloc_size_neither(args);
@@ -1592,6 +1596,7 @@ STATIC int				/* error */
 xfs_alloc_ag_vextent_size(
 	xfs_alloc_arg_t	*args)		/* allocation argument structure */
 {
+	int		flags = args->flags | XFS_ALLOC_FLAG_TRYFLUSH;
 	struct xfs_agf	*agf = args->agbp->b_addr;
 	struct xfs_btree_cur *bno_cur;	/* cursor for bno btree */
 	struct xfs_btree_cur *cnt_cur;	/* cursor for cnt btree */
@@ -1670,8 +1675,13 @@ restart:
 				xfs_btree_del_cursor(cnt_cur,
 						     XFS_BTREE_NOERROR);
 				trace_xfs_alloc_size_busy(args);
-				xfs_extent_busy_flush(args->mp,
-							args->pag, busy_gen);
+				error = xfs_extent_busy_flush(args->tp, args->pag,
+						busy_gen, flags);
+				if (error) {
+					cnt_cur = NULL;
+					goto error0;
+				}
+				flags &= ~XFS_ALLOC_FLAG_TRYFLUSH;
 				goto restart;
 			}
 		}
@@ -1755,7 +1765,13 @@ restart:
 		if (busy) {
 			xfs_btree_del_cursor(cnt_cur, XFS_BTREE_NOERROR);
 			trace_xfs_alloc_size_busy(args);
-			xfs_extent_busy_flush(args->mp, args->pag, busy_gen);
+			error = xfs_extent_busy_flush(args->tp, args->pag,
+					busy_gen, flags);
+			if (error) {
+				cnt_cur = NULL;
+				goto error0;
+			}
+			flags &= ~XFS_ALLOC_FLAG_TRYFLUSH;
 			goto restart;
 		}
 		goto out_nominleft;
@@ -2629,6 +2645,7 @@ xfs_alloc_fix_freelist(
 	targs.agno = args->agno;
 	targs.alignment = targs.minlen = targs.prod = 1;
 	targs.pag = pag;
+	targs.flags = args->flags & XFS_ALLOC_FLAG_FREEING;
 	error = xfs_alloc_read_agfl(pag, tp, &agflbp);
 	if (error)
 		goto out_agbp_relse;
@@ -3572,6 +3589,7 @@ xfs_free_extent_fix_freelist(
 	args.mp = tp->t_mountp;
 	args.agno = pag->pag_agno;
 	args.pag = pag;
+	args.flags = XFS_ALLOC_FLAG_FREEING;
 
 	/*
 	 * validate that the block number is legal - the enables us to detect
@@ -3580,7 +3598,7 @@ xfs_free_extent_fix_freelist(
 	if (args.agno >= args.mp->m_sb.sb_agcount)
 		return -EFSCORRUPTED;
 
-	error = xfs_alloc_fix_freelist(&args, XFS_ALLOC_FLAG_FREEING);
+	error = xfs_alloc_fix_freelist(&args, args.flags);
 	if (error)
 		return error;
 

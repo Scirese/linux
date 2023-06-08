@@ -337,6 +337,25 @@ xfs_trans_get_efd(
 }
 
 /*
+ * Fill the EFD with all extents from the EFI and set the counter.
+ * Note: the EFD should comtain at least one extents already.
+ */
+static void xfs_fill_efd_with_efi(struct xfs_efd_log_item *efdp)
+{
+	struct xfs_efi_log_item *efip = efdp->efd_efip;
+	uint                    i;
+
+	if (efdp->efd_next_extent == efip->efi_format.efi_nextents)
+		return;
+
+	for (i = 0; i < efip->efi_format.efi_nextents; i++) {
+	       efdp->efd_format.efd_extents[i] =
+		       efip->efi_format.efi_extents[i];
+	}
+	efdp->efd_next_extent = efip->efi_format.efi_nextents;
+}
+
+/*
  * Free an extent and log it to the EFD. Note that the transaction is marked
  * dirty regardless of whether the extent free succeeds or fails to support the
  * EFI/EFD lifecycle rules.
@@ -369,6 +388,10 @@ xfs_trans_free_extent(
 	error = __xfs_free_extent(tp, xefi->xefi_startblock,
 			xefi->xefi_blockcount, &oinfo, XFS_AG_RESV_NONE,
 			xefi->xefi_flags & XFS_EFI_SKIP_DISCARD);
+	if (error == -EAGAIN) {
+		xfs_fill_efd_with_efi(efdp);
+		return error;
+	}
 	/*
 	 * Mark the transaction dirty, even on error. This ensures the
 	 * transaction is aborted, which:
@@ -476,7 +499,8 @@ xfs_extent_free_finish_item(
 	xefi = container_of(item, struct xfs_extent_free_item, xefi_list);
 
 	error = xfs_trans_free_extent(tp, EFD_ITEM(done), xefi);
-	kmem_cache_free(xfs_extfree_item_cache, xefi);
+	if (error != -EAGAIN)
+		kmem_cache_free(xfs_extfree_item_cache, xefi);
 	return error;
 }
 
@@ -633,6 +657,17 @@ xfs_efi_item_recover(
 		fake.xefi_blockcount = extp->ext_len;
 
 		error = xfs_trans_free_extent(tp, efdp, &fake);
+		if (error == -EAGAIN) {
+			xfs_free_extent_later(tp, fake.xefi_startblock,
+				fake.xefi_blockcount, &XFS_RMAP_OINFO_ANY_OWNER);
+			/*
+			 * try to free as many extents as possible with current
+			 * transaction
+			 */
+			error = 0;
+			continue;
+		};
+
 		if (error == -EFSCORRUPTED)
 			XFS_CORRUPTION_ERROR(__func__, XFS_ERRLEVEL_LOW, mp,
 					extp, sizeof(*extp));

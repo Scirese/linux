@@ -24,6 +24,7 @@ unsigned int xfs_agfl_size(struct xfs_mount *mp);
 #define	XFS_ALLOC_FLAG_NORMAP	0x00000004  /* don't modify the rmapbt */
 #define	XFS_ALLOC_FLAG_NOSHRINK	0x00000008  /* don't shrink the freelist */
 #define	XFS_ALLOC_FLAG_CHECK	0x00000010  /* test only, don't modify args */
+#define	XFS_ALLOC_FLAG_TRYFLUSH	0x00000020  /* don't block in busyextent flush*/
 
 /*
  * Argument structure for xfs_alloc routines.
@@ -57,6 +58,7 @@ typedef struct xfs_alloc_arg {
 #ifdef DEBUG
 	bool		alloc_minlen_only; /* allocate exact minlen extent */
 #endif
+	int		flags;		/* XFS_ALLOC_FLAG_* */
 } xfs_alloc_arg_t;
 
 /*
