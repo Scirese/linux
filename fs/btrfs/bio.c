@@ -327,10 +327,10 @@ static void btrfs_end_bio_work(struct work_struct *work)
 	struct btrfs_bio *bbio = container_of(work, struct btrfs_bio, end_io_work);
 
 	/* Metadata reads are checked and repaired by the submitter. */
-	if (bbio->inode && !(bbio->bio.bi_opf & REQ_META))
-		btrfs_check_read_bio(bbio, bbio->bio.bi_private);
+	if (bbio->bio.bi_opf & REQ_META)
+		btrfs_orig_bbio_end_io(bbio);
 	else
-		bbio->end_io(bbio);
+		btrfs_check_read_bio(bbio, bbio->bio.bi_private);
 }
 
 static void btrfs_simple_end_io(struct bio *bio)
